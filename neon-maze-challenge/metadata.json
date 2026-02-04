@@ -1,0 +1,6 @@
+
+{
+  "name": "Neon Maze Challenge",
+  "description": "A high-stakes maze game with 6 levels of increasing difficulty. Avoid the walls or it's game over!",
+  "requestFramePermissions": []
+}
