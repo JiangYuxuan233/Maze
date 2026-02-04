@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>狭道迷宫：大师挑战版</title>
+    <style>
+        :root { --wall-color: #2c3e50; --accent-color: #e74c3c; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #2c3e50; color: white; margin: 0; padding: 20px; }
+        
+        #game-ui { text-align: center; margin-bottom: 15px; }
+        .level-selector { margin: 10px 0; display: flex; gap: 8px; justify-content: center; }
+        .level-btn { padding: 10px 20px; background: #95a5a6; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .level-btn.active { background: #e67e22; color: white; }
+
+        #maze-container {
+            position: relative; 
+            width: 900px; height: 600px;
+            background: #ecf0f1; border: 10px solid #7f8c8d; 
+            overflow: hidden; cursor: crosshair;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        .wall { position: absolute; background: var(--wall-color); }
+        .wall.hit { background: var(--accent-color) !important; transition: 0.1s; }
+
+        /* 动画库 */
+        .moving-v { animation: moveV 3s infinite alternate ease-in-out; }
+        .moving-h { animation: moveH 3s infinite alternate ease-in-out; }
+        .scaling-h { animation: scaleX 2s infinite alternate ease-in-out; }
+        .fading-wall { animation: fade 3s infinite alternate steps(1, end); }
+        .rotating { animation: rotate-center 3s infinite linear; transform-origin: center; }
+
+        @keyframes moveV { from { transform: translateY(0); } to { transform: translateY(200px); } }
+        @keyframes moveH { from { transform: translateX(0); } to { transform: translateX(300px); } }
+        @keyframes scaleX { from { transform: scaleX(1); } to { transform: scaleX(0.5); } }
+        @keyframes fade { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+        @keyframes rotate-center { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        #start, #end { 
+            position: absolute; width: 60px; height: 60px; 
+            display: flex; align-items: center; justify-content: center; 
+            color: white; font-weight: bold; z-index: 100;
+        }
+        #start { background: #27ae60; top: 0; left: 0; }
+        #end { background: #f1c40f; color: #333; bottom: 0; right: 0; }
+        #message { height: 40px; margin-top: 15px; font-size: 1.2em; font-weight: bold; text-shadow: 1px 1px 2px black; }
+    </style>
+</head>
+<body>
+
+<div id="game-ui">
+    <h1 id="lvl-title">狭道迷宫：大师挑战版</h1>
+    <div class="level-selector" id="btn-container"></div>
+    <div style="font-size: 0.9em; opacity: 0.8;">当前关卡: <span id="lvl-num">1</span></div>
+</div>
+
+<div id="maze-container">
+    <div id="start">起点</div>
+    <div id="end">终点</div>
+    <div id="walls-wrapper"></div>
+</div>
+
+<div id="message">请将鼠标停在“起点”开始</div>
+
+<script>
+    const wrapper = document.getElementById('walls-wrapper');
+    const message = document.getElementById('message');
+    const btnContainer = document.getElementById('btn-container');
+    const lvlTitle = document.getElementById('lvl-title');
+    const lvlNumDisp = document.getElementById('lvl-num');
+
+    let currentLevel = 1;
+    let gameActive = false;
+
+    // --- 整合后的关卡数据 ---
+    const levels = {
+        1: {
+            name: "蛇形回廊",
+            walls: [
+                {t:80, l:0, w:800, h:20}, {t:160, l:100, w:800, h:20}, {t:240, l:0, w:800, h:20},
+                {t:320, l:100, w:800, h:20}, {t:400, l:0, w:800, h:20}, {t:480, l:100, w:800, h:20}
+            ]
+        },
+        2: {
+            name: "枝繁叶茂",
+            walls: [
+                {t:20, l:150, w:20, h:150}, {t:250, l:150, w:20, h:200}, {t:20, l:300, w:20, h:300}, 
+                {t:420, l:300, w:20, h:160}, {t:150, l:450, w:20, h:300}, {t:0, l:600, w:20, h:180},
+                {t:300, l:600, w:20, h:280}, {t:120, l:750, w:20, h:350}, {t:150, l:20, w:130, h:20},
+                {t:350, l:150, w:150, h:20}, {t:450, l:20, w:280, h:20}, {t:250, l:10, w:290, h:20, class:'rotating'},
+                {t:150, l:300, w:150, h:20}, {t:300, l:450, w:150, h:20}, {t:450, l:600, w:150, h:20},
+                {t:120, l:600, w:150, h:20}, {t:300, l:750, w:130, h:20}, {t:250, l:600, w:80, h:20},
+                {t:500, l:750, w:50, h:20}, {t:80, l:150, w:80, h:20}
+            ]
+        },
+        3: {
+            name: "动态大峡谷",
+            walls: [
+                {t:100, l:0, w:700, h:30}, {t:250, l:200, w:700, h:30}, {t:400, l:0, w:700, h:30},
+                {t:130, l:100, w:30, h:120, class:'moving-v'}, {t:130, l:400, w:30, h:120, class:'moving-v'},
+                {t:280, l:300, w:30, h:120, class:'moving-v'}, {t:280, l:600, w:30, h:120, class:'moving-v'}
+            ]
+        },
+        4: {
+            name: "激光回廊",
+            walls: [
+                {t:0, l:150, w:20, h:500}, {t:100, l:300, w:20, h:500}, {t:0, l:450, w:20, h:500},
+                {t:100, l:600, w:20, h:500}, {t:0, l:750, w:20, h:500},
+                {t:50, l:170, w:130, h:20, class:'moving-v'}, {t:50, l:470, w:130, h:20, class:'moving-v'}, 
+                {t:530, l:200, w:100, h:30, class:'moving-h'}, {t:400, l:750, w:110, h:50, class:'moving-v'},
+                {t:0, l:150, w:150, h:20}, {t:580, l:300, w:150, h:20}, {t:0, l:450, w:150, h:20}, {t:580, l:600, w:150, h:20}
+            ]
+        },
+        5: {
+            name: "终极审判：移动旋转地狱",
+            walls: [
+                {t:0, l:100, w:20, h:400}, {t:100, l:0, w:60, h:80}, {t:320, l:0, w:60, h:80},
+                {t:210, l:40, w:60, h:80}, {t:510, l:0, w:210, h:20, class:'rotating'},
+                {t:200, l:200, w:20, h:400}, {t:15, l:300, w:20, h:400}, {t:0, l:200, w:20, h:100},
+                {t:150, l:200, w:100, h:20, class:'scaling-h'}, {t:110, l:120, w:180, h:20, class:'scaling-h'},
+                {t:350, l:220, w:100, h:20, class:'scaling-h'}, {t:450, l:220, w:200, h:20},
+                {t:100, l:400, w:20, h:150, class:'fading-wall'}, {t:350, l:400, w:20, h:200, class:'fading-wall'},
+                {t:250, l:400, w:120, h:20, class:'fading-wall'}, {t:45, l:300, w:150, h:20, class:'fading-wall'},
+                {t:250, l:360, w:20, h:120, class:'rotating'}, {t:0, l:500, w:20, h:250},
+                {t:270, l:500, w:20, h:400}, {t:0, l:680, w:20, h:550},
+                {t:50, l:520, w:120, h:20, class:'moving-v'}, {t:250, l:520, w:120, h:20, class:'moving-v'}, 
+                {t:450, l:520, w:120, h:20, class:'moving-v'}, {t:-100, l:600, w:80, h:90, class:'moving-v'},
+                {t:100, l:600, w:80, h:90, class:'moving-v'}, {t:300, l:600, w:80, h:90, class:'moving-v'},  
+                {t:500, l:600, w:80, h:90, class:'moving-v'}, {t:400, l:720, w:100, h:20, class:'moving-h'},
+                {t:200, l:720, w:100, h:20, class:'moving-h'}, {t:100, l:800, w:20, h:500}, 
+                {t:100, l:800, w:80, h:20}, {t:300, l:740, w:80, h:20}, {t:500, l:800, w:80, h:20}
+            ]
+        }
+    };
+
+    function initButtons() {
+        btnContainer.innerHTML = '';
+        Object.keys(levels).forEach(num => {
+            const btn = document.createElement('button');
+            btn.className = 'level-btn' + (num == currentLevel ? ' active' : '');
+            btn.innerText = '第' + num + '关'+" "+ levels[num].name;;
+            btn.onclick = () => loadLevel(parseInt(num));
+            btnContainer.appendChild(btn);
+        });
+    }
+
+    function loadLevel(lvl) {
+        currentLevel = lvl;
+        gameActive = false;
+        wrapper.innerHTML = '';
+        
+        const data = levels[lvl];
+        lvlTitle.innerText = data.name;
+        lvlNumDisp.innerText = lvl;
+        
+        message.innerText = "已进入：" + data.name + "。回到起点开始！";
+        message.style.color = "#ecf0f1";
+        initButtons();
+
+        data.walls.forEach(w => {
+            const div = document.createElement('div');
+            div.className = 'wall ' + (w.class || '');
+            div.style.top = w.t + 'px'; 
+            div.style.left = w.l + 'px';
+            div.style.width = w.w + 'px'; 
+            div.style.height = w.h + 'px';
+            
+            div.onmouseover = () => {
+                const opacity = window.getComputedStyle(div).opacity;
+                if(gameActive && opacity > 0.5) {
+                    gameActive = false;
+                    message.innerText = "💥 出局！你撞到了墙壁！";
+                    message.style.color = "#e74c3c";
+                    div.classList.add('hit');
+                    alert("出局！请回到起点重试。");
+                }
+            };
+            wrapper.appendChild(div);
+        });
+    }
+
+    document.getElementById('start').onmouseover = () => {
+        gameActive = true;
+        message.innerText = "游戏开始！稳住...";
+        message.style.color = "#2ecc71";
+        document.querySelectorAll('.wall').forEach(w => w.classList.remove('hit'));
+    };
+
+    document.getElementById('end').onmouseover = () => {
+        if(gameActive) {
+            gameActive = false;
+            message.innerText = "🎊 漂亮！你通关了这一关！";
+            message.style.color = "#f1c40f";
+            setTimeout(() => {
+                alert("恭喜通关！你可以选择下一关继续挑战。");
+            }, 100);
+        }
+    };
+
+    document.getElementById('maze-container').onmouseleave = () => {
+        if(gameActive) {
+            gameActive = false;
+            message.innerText = "⚠️ 鼠标离开了区域！";
+            message.style.color = "#e67e22";
+        }
+    };
+
+    initButtons();
+    loadLevel(1);
+</script>
+</body>
+</html>
